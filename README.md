@@ -32,6 +32,7 @@ Open the URL printed by Vite. Test before pushing:
 npm run typecheck
 npm test
 npm run build
+npm run test:e2e # after npx playwright install chromium
 ```
 
 **Dependency pinning:** The initial commit may not include `package-lock.json` because dependencies could not be installed in the authoring environment. After the first successful `npm install`, **commit the generated `package-lock.json`**. CI currently uses `npm install`; migrate to `npm ci` once the lockfile is committed.
