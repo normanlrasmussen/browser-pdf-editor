@@ -6,7 +6,7 @@ A free, ad-free, no-account, **client-side PDF viewer and editor**, designed for
 
 ## Current features
 
-- Open PDFs stored on your device (including multiple PDFs at once), preview pages and thumbnails, and zoom.
+- Open PDFs stored on your device (including multiple PDFs at once), preview pages and thumbnails. Fit-page zoom is the default and automatically resizes with the workspace; fit-width, preset percentages, and zoom in/out are also available.
 - Combine multiple PDFs in any order. Drag page thumbnails to rearrange, duplicate, rotate, or delete pages.
 - Add editable text boxes, drag them into position, change fonts, sizes, colors, and wrapping width.
 - Select existing PDF text to highlight; export highlights as standard PDF annotation dictionaries (`/Subtype /Highlight`, `/QuadPoints`).

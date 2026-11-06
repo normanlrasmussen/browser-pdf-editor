@@ -63,3 +63,38 @@ test('privacy: sample workspace does not request third-party resources', async (
   await expect(page.locator('.thumb-row')).toHaveCount(3);
   expect(external).toEqual([]);
 });
+
+test('defaults to fit-page and keeps a rotated PDF inside the visible workspace', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 650 });
+  await page.goto('/');
+  await page.getByRole('button', { name: /explore with a sample document/i }).click();
+  await expect(page.getByRole('combobox', { name: 'Zoom level' })).toHaveValue('fit-page');
+  await expect(page.locator('.thumb-row')).toHaveCount(3);
+
+  async function expectPageFits() {
+    await expect.poll(async () => page.evaluate(() => {
+      const area = document.querySelector('.document-canvas-area');
+      const paper = document.querySelector('.paper-surface');
+      if (!area || !paper) return false;
+      const visibleWidth = area.clientWidth - 34;
+      const visibleHeight = area.clientHeight - 34;
+      return paper.clientWidth > 0 && paper.clientHeight > 0 &&
+        paper.getBoundingClientRect().width <= visibleWidth + 1 &&
+        paper.getBoundingClientRect().height <= visibleHeight + 1 &&
+        area.scrollHeight <= area.clientHeight + 2;
+    })).toBe(true);
+  }
+
+  await expectPageFits();
+  await page.getByRole('button', { name: 'Rotate right' }).click();
+  await expectPageFits();
+  await page.getByRole('button', { name: 'Next page' }).click();
+  await expectPageFits();
+  await page.setViewportSize({ width: 960, height: 540 });
+  await expectPageFits();
+  await page.getByRole('combobox', { name: 'Zoom level' }).selectOption('2');
+  await expect(page.getByRole('combobox', { name: 'Zoom level' })).toHaveValue('2');
+  await expect(page.getByLabel('Current zoom')).toHaveText('200%');
+  await page.getByRole('combobox', { name: 'Zoom level' }).selectOption('fit-page');
+  await expectPageFits();
+});
