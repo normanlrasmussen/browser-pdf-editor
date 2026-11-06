@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PDFDocument, StandardFonts, PDFName, PDFArray } from 'pdf-lib';
+import { PDFDocument, StandardFonts, PDFName, PDFArray, PDFDict } from 'pdf-lib';
 import type { EditorPage, SourceDocument } from '../types';
 import { exportPages, parsePageRange } from './export';
 
@@ -51,8 +51,8 @@ describe('local PDF export', () => {
     const annotations = output.getPage(0).node.Annots();
     expect(annotations).toBeInstanceOf(PDFArray);
     expect(annotations?.size()).toBe(1);
-    const annot = output.context.lookup(annotations!.get(0));
-    expect(String((annot as { get(k: PDFName): unknown }).get(PDFName.of('Subtype')))).toBe('/Highlight');
+    const annot = output.context.lookup(annotations!.get(0), PDFDict);
+    expect(String(annot.get(PDFName.of('Subtype')))).toBe('/Highlight');
     expect(await output.embedFont(StandardFonts.Helvetica)).toBeDefined();
   });
 });
