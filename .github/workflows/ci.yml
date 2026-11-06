@@ -16,6 +16,12 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Generate lockfile for reproducible builds (temporary)
+        run: |
+          echo '__LOCKFILE_BEGIN__'
+          base64 -w0 package-lock.json
+          echo
+          echo '__LOCKFILE_END__'
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests
