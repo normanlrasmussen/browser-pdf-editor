@@ -14,7 +14,7 @@ export async function openPdf(file: File): Promise<SourceDocument> {
   if (!file.name.toLowerCase().endsWith('.pdf')) throw new Error(`${file.name}: expected a PDF file.`);
   const bytes = new Uint8Array(await file.arrayBuffer());
   // PDF.js may transfer its input buffer to a worker: retain our own immutable copy.
-  const loadingTask = getDocument({ data: bytes.slice(), isEvalSupported: false });
+  const loadingTask = getDocument({ data: bytes.slice() });
   let pdf;
   try {
     pdf = await loadingTask.promise;
