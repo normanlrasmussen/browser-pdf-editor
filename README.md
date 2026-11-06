@@ -35,7 +35,7 @@ npm run build
 npm run test:e2e # after npx playwright install chromium
 ```
 
-**Dependency pinning:** The initial commit may not include `package-lock.json` because dependencies could not be installed in the authoring environment. After the first successful `npm install`, **commit the generated `package-lock.json`**. CI currently uses `npm install`; migrate to `npm ci` once the lockfile is committed.
+**Dependency pinning:** `package-lock.json` is committed. The CI and deployment workflows use `npm ci` for reproducible dependency installation.
 
 ## Deploy on GitHub Pages
 
