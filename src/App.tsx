@@ -15,11 +15,12 @@ import { downloadPdf, exportPages, parsePageRange } from './pdf/export';
 import PdfViewport from './components/PdfViewport';
 import type { PdfViewportHandle } from './components/PdfViewport';
 import PageThumbnail from './components/PageThumbnail';
+import { calculateFitZoom, nextZoomStep, ZOOM_PRESETS } from './pdf/zoom';
+import type { ZoomMode } from './pdf/zoom';
 
 type ExportMode = 'all' | 'current' | 'range';
 
 const MAX_TOTAL_PAGES = 600;
-const ZOOM_STEPS = [0.5, 0.65, 0.8, 1, 1.25, 1.5, 2];
 
 function pagesFromSource(source: SourceDocument): EditorPage[] {
   return Array.from({ length: source.pageCount }, (_, index) => ({
@@ -65,7 +66,10 @@ export default function App() {
   const [selectedStampId, setSelectedStampId] = useState<string | null>(null);
   const [tool, setTool] = useState<ToolMode>('select');
   const [highlightColor, setHighlightColor] = useState('#ffe066');
-  const [zoom, setZoom] = useState(0.8);
+  const [zoomMode, setZoomMode] = useState<ZoomMode>('fit-page');
+  const [manualZoom, setManualZoom] = useState(1);
+  const [pageDimensions, setPageDimensions] = useState<{ key: string; width: number; height: number } | null>(null);
+  const [fitAreaDimensions, setFitAreaDimensions] = useState({ width: 0, height: 0 });
   const [exportMode, setExportMode] = useState<ExportMode>('all');
   const [pageRange, setPageRange] = useState('1-3');
   const [busy, setBusy] = useState<'opening' | 'exporting' | null>(null);
@@ -73,6 +77,7 @@ export default function App() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const preview = useRef<PdfViewportHandle>(null);
+  const fitAreaRef = useRef<HTMLDivElement>(null);
   const draggingPageId = useRef<string | null>(null);
 
   const activePage = useMemo(() => pages.find((p) => p.id === selectedPageId) ?? pages[0] ?? null, [pages, selectedPageId]);
@@ -80,6 +85,64 @@ export default function App() {
   const activeSource = activePage ? sources[activePage.sourceId] : undefined;
   const activeStamp = activePage?.stamps.find((s) => s.id === selectedStampId);
   const sourceList = useMemo(() => Object.values(sources), [sources]);
+  const activePageGeometryKey = activePage ? `${activePage.sourceId}:${activePage.sourceIndex}:${activePage.rotation}` : null;
+  const zoom = zoomMode === 'custom' ? manualZoom
+    : pageDimensions?.key === activePageGeometryKey && fitAreaDimensions.width > 0 && fitAreaDimensions.height > 0
+      ? calculateFitZoom(pageDimensions, fitAreaDimensions, zoomMode)
+      : 0.8;
+
+  // PDF dimensions are measured in page points at scale 1, including the active rotation.
+  // Delayed responses cannot apply dimensions from a previously selected page.
+  useEffect(() => {
+    let cancelled = false;
+    if (!activePage || !activeSource || !activePageGeometryKey) {
+      return;
+    }
+    const pageIndex = activePage.sourceIndex;
+    const userRotation = activePage.rotation;
+    const key = activePageGeometryKey;
+    void activeSource.pdf.getPage(pageIndex + 1).then((page) => {
+      if (cancelled) return;
+      const viewport = page.getViewport({ scale: 1, rotation: (page.rotate + userRotation) % 360 });
+      setPageDimensions({ key, width: viewport.width, height: viewport.height });
+    }).catch(() => {
+      // The PDF viewport reports unsupported or damaged pages to the user.
+    });
+    return () => { cancelled = true; };
+  }, [activePageGeometryKey, activeSource]);
+
+  // A ResizeObserver handles window size changes, sidebar changes, and workspace resizing.
+  useEffect(() => {
+    const area = fitAreaRef.current;
+    if (!area) return;
+    const measure = () => {
+      const width = area.clientWidth;
+      const height = area.clientHeight;
+      setFitAreaDimensions((previous) =>
+        previous.width === width && previous.height === height ? previous : { width, height },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [activePage?.id]);
+
+  function setZoomPreset(value: string) {
+    if (value === 'fit-page' || value === 'fit-width') {
+      setZoomMode(value);
+      return;
+    }
+    const next = Number(value);
+    if (!Number.isFinite(next)) return;
+    setManualZoom(next);
+    setZoomMode('custom');
+  }
+
+  function changeZoom(direction: -1 | 1) {
+    setManualZoom(nextZoomStep(zoom, direction));
+    setZoomMode('custom');
+  }
 
   const showNotice = useCallback((message: string, isError = false) => setNotice({ message, isError }), []);
 
@@ -270,11 +333,13 @@ export default function App() {
           {activePage && activeSource ? (
             <div className="document-stage" key="document-stage">
               <div className="stage-topline"><span><FileText size={14} /> {activeSource.name}</span><span>PAGE {activeIndex + 1} OF {pages.length}</span></div>
-              <PdfViewport
-                ref={preview} item={activePage} source={activeSource} zoom={zoom} tool={tool}
-                selectedStampId={selectedStampId} onAddText={addText} onSelectStamp={setSelectedStampId}
-                onMoveStamp={(stampId, x, y) => dispatch({ type: 'updateStamp', pageId: activePage.id, stampId, changes: { x, y } })}
-              />
+              <div className="document-canvas-area" ref={fitAreaRef} aria-label="PDF page workspace">
+                <PdfViewport
+                  ref={preview} item={activePage} source={activeSource} zoom={zoom} tool={tool}
+                  selectedStampId={selectedStampId} onAddText={addText} onSelectStamp={setSelectedStampId}
+                  onMoveStamp={(stampId, x, y) => dispatch({ type: 'updateStamp', pageId: activePage.id, stampId, changes: { x, y } })}
+                />
+              </div>
               <div className="stage-footer-note"><ShieldCheck size={15} /> Your documents never leave this browser.</div>
             </div>
           ) : (
@@ -300,8 +365,20 @@ export default function App() {
                 <strong>{activeIndex + 1}</strong><span>/ {pages.length}</span>
                 <button type="button" className="icon-button" aria-label="Next page" disabled={activeIndex >= pages.length - 1} onClick={() => { setSelectedPageId(pages[activeIndex + 1].id); setSelectedStampId(null); }}><ArrowRight size={17} /></button>
               </div>
-              <div className="zoom-controls"><button type="button" className="icon-button" title="Zoom out" aria-label="Zoom out" disabled={zoom <= ZOOM_STEPS[0]} onClick={() => setZoom(ZOOM_STEPS[Math.max(0, ZOOM_STEPS.findIndex((z) => z >= zoom) - 1)])}><ZoomOut size={17} /></button>
-                <span>{Math.round(zoom * 100)}%</span><button type="button" className="icon-button" title="Zoom in" aria-label="Zoom in" disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} onClick={() => setZoom(ZOOM_STEPS.find((z) => z > zoom) ?? 2)}><ZoomIn size={17} /></button>
+              <div className="zoom-controls" aria-label="PDF zoom controls">
+                <button type="button" className="icon-button" title="Zoom out" aria-label="Zoom out" disabled={zoom <= ZOOM_PRESETS[0]} onClick={() => changeZoom(-1)}><ZoomOut size={17} /></button>
+                <select
+                  className="zoom-select"
+                  aria-label="Zoom level"
+                  value={zoomMode === 'custom' ? String(manualZoom) : zoomMode}
+                  onChange={(event) => setZoomPreset(event.target.value)}
+                >
+                  <option value="fit-page">Fit page</option>
+                  <option value="fit-width">Fit width</option>
+                  {ZOOM_PRESETS.map((scale) => <option key={scale} value={String(scale)}>{Math.round(scale * 100)}%</option>)}
+                </select>
+                <output className="zoom-percent" aria-label="Current zoom">{Math.round(zoom * 100)}%</output>
+                <button type="button" className="icon-button" title="Zoom in" aria-label="Zoom in" disabled={zoom >= ZOOM_PRESETS[ZOOM_PRESETS.length - 1]} onClick={() => changeZoom(1)}><ZoomIn size={17} /></button>
               </div>
             </div>
           )}
